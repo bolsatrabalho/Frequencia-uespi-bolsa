@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Sistema de Frequência de Bolsistas</title>
+<style>
+body { font-family: Arial; background:#f4f6f8; padding:20px; }
+.container { background:#fff; padding:25px; border-radius:8px; box-shadow:0 4px 15px rgba(0,0,0,0.1);}
+table { width:100%; border-collapse:collapse; font-size:13px;}
+th,td { border:1px solid #ccc; padding:6px; text-align:center;}
+th { background:#f0f0f0; }
+button { padding:6px 10px; border:none; border-radius:4px; background:#0057b8; color:#fff; cursor:pointer;}
+button:hover { background:#004494;}
+.hidden { display:none; }
+select, input[type="text"], input[type="date"], input[type="file"] { width:100%; font-size:12px;}
+.info { margin-bottom:10px; font-size:14px; color:#333;}
+</style>
+</head>
+<body>
+<div class="container">
+<h2>Sistema de Frequência de Bolsistas</h2>
+<div class="info" id="infoUsuario"></div>
+
+<div style="margin:10px 0;">
+<button id="btnAdicionar" onclick="adicionarBolsista()">➕ Adicionar Bolsista</button>
+<button onclick="salvar()">💾 Salvar</button>
+<button onclick="enviarPlanilha()">📤 Enviar Planilha</button>
+</div>
+
+<table>
+<thead>
+<tr>
+<th>Campus</th>
+<th>Nome</th>
+<th>Matrícula</th>
+<th>Setor</th>
+<th>Início</th>
+<th>Fim</th>
+<th>Email Coordenador</th>
+<th>Jan</th><th>Fev</th><th>Mar</th><th>Abr</th>
+<th>Mai</th><th>Jun</th><th>Jul</th><th>Ago</th>
+<th>Set</th><th>Out</th><th>Nov</th><th>Dez</th>
+<th>Justificativa</th>
+<th>Arquivo</th>
+<th>Ações</th>
+</tr>
+</thead>
+<tbody id="tbody"></tbody>
+</table>
+</div>
+
+<script>
+const URL_APPS = "https://script.google.com/macros/s/AKfycbwocuHShxa_CTiFPoYvkPklDVxi5w_G1JacA76WfZOFwmDxPyOf7o9VfcxZ6RkZJRn9kA/exec";
+const EMAIL_ADMIN = "bolsatrabalho@prex.uespi.br";
+
+// Usuário logado
+const emailUsuario = sessionStorage.getItem("coordenadorLogado");
+const tipoUsuario = (emailUsuario === EMAIL_ADMIN) ? "admin" : "coordenador";
+
+if(!emailUsuario){
+    alert("Acesso inválido.");
+    window.location.href = "index.html";
+}
+document.getElementById("infoUsuario").innerText = `Usuário: ${emailUsuario} | Perfil: ${tipoUsuario}`;
+if(tipoUsuario!=="admin") document.getElementById("btnAdicionar").classList.add("hidden");
+
+// Dados
+let bolsistas = [];
+
+// Puxa dados do Apps Script
+function carregarBolsistas(){
+    fetch(`${URL_APPS}?acao=listar&email=${emailUsuario}`)
+    .then(r=>r.json())
+    .then(d=>{
+        if(d.status==="ok"){
+            bolsistas = d.dados.map(linha=>{
+                const obj = {};
+                d.cabecalho.forEach((c,i)=>{
+                    obj[c] = linha[i];
+                });
+                return obj;
+            });
+            renderTabela();
+        } else {
+            alert("Erro: "+d.mensagem);
+        }
+    })
+    .catch(()=>alert("Erro de conexão com o servidor"));
+}
+
+// Renderização
+function renderTabela(){
+    const tbody = document.getElementById("tbody");
+    tbody.innerHTML="";
+    bolsistas.forEach((b,i)=>{
+        const tr = document.createElement("tr");
+        tr.innerHTML=`
+        <td>${campoTexto(b.Campus,i,"Campus",tipoUsuario==="admin")}</td>
+        <td>${campoTexto(b.Nome,i,"Nome",tipoUsuario==="admin")}</td>
+        <td>${b.Matrícula||""}</td>
+        <td>${campoTexto(b.Setor,i,"Setor",tipoUsuario==="admin")}</td>
+        <td>${campoData(b.Início,i,"Início",tipoUsuario==="admin")}</td>
+        <td>${campoData(b.Fim,i,"Fim",tipoUsuario==="admin")}</td>
+        <td>${campoTexto(b["Email Coordenador"],i,"Email Coordenador",tipoUsuario==="admin")}</td>
+        ${mesesHTML(b,i)}
+        <td>${campoTexto(b.Justificativa,i,"Justificativa",true)}</td>
+        <td><input type="file" onchange="uploadArquivo(event,${i})"></td>
+        <td>${tipoUsuario==="admin"?`<button onclick="removerBolsista(${i})">Remover</button>`:""}</td>`;
+        tbody.appendChild(tr);
+    });
+}
+
+// Funções auxiliares
+function campoTexto(valor,i,campo,editavel){ return editavel? `<input type="text" value="${valor||''}" onchange="bolsistas[${i}]['${campo}']=this.value">`:valor||'';}
+function campoData(valor,i,campo,editavel){ return editavel? `<input type="date" value="${valor||''}" onchange="bolsistas[${i}]['${campo}']=this.value">`:valor||'';}
+function mesesHTML(b,i){
+    const meses=["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+    return meses.map(m=>`<td><select onchange="bolsistas[${i}]['${m}']=this.value"><option value="" ${!b[m]?"selected":""}></option><option value="SIM" ${b[m]==="SIM"?"selected":""}>SIM</option><option value="NÃO" ${b[m]==="NÃO"?"selected":""}>NÃO</option></select></td>`).join("");
+}
+
+// Ações
+function adicionarBolsista(){ bolsistas.push({Campus:"",Nome:"",Matrícula:"",Setor:"",Início:"",Fim:"",["Email Coordenador"]:"",Justificativa:""}); renderTabela();}
+function removerBolsista(i){ if(confirm("Remover bolsista?")){ bolsistas.splice(i,1); renderTabela(); }}
+function salvar(){ localStorage.setItem("bolsistas",JSON.stringify(bolsistas)); alert("Salvo com sucesso!"); }
+function uploadArquivo(e,i){ const file=e.target.files[0]; if(!file)return; if(file.size>10*1024*1024){alert("Arquivo maior que 10MB");e.target.value="";return;} const reader=new FileReader(); reader.onload=()=>{bolsistas[i].arquivoBase64=reader.result.split(",")[1]; bolsistas[i].arquivoNome=file.name; bolsistas[i].arquivoMime=file.type;}; reader.readAsDataURL(file);}
+function enviarPlanilha(){ fetch(URL_APPS,{method:"POST",body:JSON.stringify(bolsistas)}).then(r=>r.json()).then(d=>{ if(d.status==="ok") alert("Dados enviados com sucesso!"); else alert("Erro ao enviar: "+d.mensagem); }).catch(()=>alert("Erro de conexão com o servidor")); }
+
+// Inicializa
+carregarBolsistas();
+</script>
+</body>
+</html>
